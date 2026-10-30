@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Smartway Ticket Guard
 // @namespace    https://smartway.today/
-// @version      2.0
+// @version      2.1
 // @description  Предохранитель для проверки данных перед покупкой билетов + Alt+C
 // @author       Smartway
 // @match        https://*/*
@@ -20,27 +20,27 @@
     var ICON_CLOSE = '\u2715';
 
     var TARGETS = [
-        { domain: 'e-traffic.ru', selector: ".btn-order, .btn-buy, button[type='submit'], .order-button, .btn" },
+        { domain: 'e-traffic.ru', selector: ".btn-order, .btn-buy, button[type='submit'], .order-button" },
         { domain: 'avtovokzaly.ru', selector: ".btn-buy, .btn-success, .ticket-btn, .button-pay, .pay-btn, .js-buy-btn, [class*='buy-button'], [class*='pay-button'], .btn-pay, button" },
-        { domain: 'tutu.ru', selector: ".order-button, button.b-button, [class*='SubmitButton'], .btn" },
-        { domain: 'aeroexpress.ru', selector: "button[type='submit'], .buy-button, [class*='button'], .btn" },
-        { domain: 'rfbus.ru', selector: ".btn-booking, .btn-pay, [class*='submit'], .button-booking, .btn" },
-        { domain: 'avperm.ru', selector: ".btn-buy, .btn-primary, button[type='submit'], .js-buy-ticket, .buy-btn, .btn-order, .js-order-btn, .button, a, .btn" },
+        { domain: 'tutu.ru', selector: ".order-button, button.b-button, [class*='SubmitButton']" },
+        { domain: 'aeroexpress.ru', selector: "button[type='submit'], .buy-button, [class*='button']" },
+        { domain: 'rfbus.ru', selector: ".btn-booking, .btn-pay, [class*='submit'], .button-booking" },
+        { domain: 'avperm.ru', selector: ".btn-buy, .btn-primary, button[type='submit'], .js-buy-ticket, .buy-btn, .btn-order, .js-order-btn, .button, a" },
         { domain: 'krasavtovokzal.ru', selector: ".btn, button, .js-buy, .order-btn, .js-order-ticket" },
-        { domain: 'avtoperm.ru', selector: ".btn-buy, .btn-primary, button[type='submit'], .btn" },
-        { domain: 'avtovokzal-irkutsk.ru', selector: ".btn-buy, #buy-btn, button, .btn" },
-        { domain: 'unitiki.com', selector: "button, [type='submit'], .btn-pay, .submit-button, .btn" },
+        { domain: 'avtoperm.ru', selector: ".btn-buy, .btn-primary, button[type='submit']" },
+        { domain: 'avtovokzal-irkutsk.ru', selector: ".btn-buy, #buy-btn, button" },
+        { domain: 'unitiki.com', selector: "button, [type='submit'], .btn-pay, .submit-button" },
         { domain: 'ros-bilet.ru', selector: ".btn, button, .buy-btn, [class*='pay'], .pay-btn" },
         { domain: 'smarttravel.ru', selector: "button, .v-btn, .btn-primary, .btn, [role='button']" },
         { domain: 'smart-mobility.ru', selector: "button, .v-btn, .btn-order, .btn-primary, [role='button']" },
-        { domain: 'aviasales.ru', selector: "[data-test-id='button'], .btn" },
-        { domain: 'yandex.ru', selector: ".Button_purchase, .btn" }
+        { domain: 'aviasales.ru', selector: "[data-test-id='button']" },
+        { domain: 'yandex.ru', selector: ".Button_purchase" }
     ];
 
     var KEYWORDS = [
         'оформить билет', 'оформить', 'оплатить', 'купить', 'забронировать',
         'далее', 'подтвердить', 'pay', 'order', 'продолжить', 'бронировать',
-        'купить за', 'оплатить картой', 'перейти к оплате', 'выбрать', 'оформить заказ'
+        'купить за', 'оплатить картой', 'перейти к оплате'
     ];
 
     var MONTH_MAP = {
@@ -89,32 +89,33 @@
         });
     }
 
-    // УПРОЩЁННАЯ ПРОВЕРКА: если есть KEYWORDS в тексте кнопки — считаем финальной стадией
+    // ОРИГИНАЛЬНАЯ ЛОГИКА из content.js
     function isFinalCheckoutStage(buttonText, hostname) {
         var url = window.location.href.toLowerCase();
         var pageText = (document.body.innerText || '').toLowerCase();
         var btnLower = buttonText.toLowerCase();
 
-        // Если кнопка содержит ключевые слова оплаты — это финальная стадия
-        var hasActionKeyword = false;
-        for (var k = 0; k < KEYWORDS.length; k++) {
-            if (btnLower.indexOf(KEYWORDS[k]) !== -1) {
-                hasActionKeyword = true;
+        // Проверка на поле пароля
+        var passwordInputs = document.querySelectorAll('input[type="password"]');
+        var hasVisiblePassword = false;
+        for (var i = 0; i < passwordInputs.length; i++) {
+            if (passwordInputs[i].offsetParent !== null || passwordInputs[i].offsetWidth > 0) {
+                hasVisiblePassword = true;
                 break;
             }
         }
+        if (hasVisiblePassword) return false;
 
-        // Для smart-mobility и smarttravel — всегда показываем, если есть ключевое слово
+        // Для smart-mobility и smarttravel — показываем, если есть ключевое слово
         if (hostname.indexOf('smart-mobility.ru') !== -1 || hostname.indexOf('smarttravel.ru') !== -1) {
-            return hasActionKeyword;
-        }
-
-        // Проверка на поле пароля — если есть, не перехватываем
-        var passwordInputs = document.querySelectorAll('input[type="password"]');
-        for (var i = 0; i < passwordInputs.length; i++) {
-            if (passwordInputs[i].offsetParent !== null || passwordInputs[i].offsetWidth > 0) {
-                return false;
+            var isAction = false;
+            for (var k = 0; k < KEYWORDS.length; k++) {
+                if (btnLower.indexOf(KEYWORDS[k]) !== -1) {
+                    isAction = true;
+                    break;
+                }
             }
+            return isAction;
         }
 
         // Страницы поиска — не перехватываем
@@ -122,44 +123,61 @@
             url.indexOf('/rasp') !== -1 || url.indexOf('/shedule') !== -1 || url.indexOf('/selection') !== -1;
         if (isSearchPage) return false;
 
-        // Для e-traffic.ru — показываем чек-лист, если есть ключевое слово
-        if (hostname.indexOf('e-traffic.ru') !== -1) {
-            return hasActionKeyword;
-        }
+        // Критические селекторы полей ввода
+        var criticalSelectors = [
+            'input[name*="surname"]', 'input[name*="lastname"]', 'input[name*="fio"]',
+            'input[placeholder*="Фамилия"]', 'input[placeholder*="Имя"]', 'input[placeholder*="Паспорт"]',
+            'input[placeholder*="Документ"]', 'input[aria-label*="Фамилия"]',
+            'input[data-vv-name*="passenger"]', 'input[name*="passenger"]',
+            'input[id*="pas"]', 'input[id*="doc"]', 'input[id*="passenger"]', 'input[name*="doc"]'
+        ];
 
-        // Для avtovokzaly.ru — показываем, если есть ключевое слово или маркеры
-        if (hostname.indexOf('avtovokzaly.ru') !== -1) {
-            var markers = ['пассажир', 'фамилия', 'паспорт', 'номер документа', 'данные пассажира'];
-            var markersFound = 0;
-            for (var m = 0; m < markers.length; m++) {
-                if (pageText.indexOf(markers[m]) !== -1) markersFound++;
+        var allCritical = document.querySelectorAll(criticalSelectors.join(', '));
+        var hasVisibleInputs = false;
+        for (var j = 0; j < allCritical.length; j++) {
+            if (allCritical[j].offsetParent !== null || allCritical[j].offsetWidth > 0) {
+                hasVisibleInputs = true;
+                break;
             }
-            return hasActionKeyword || markersFound >= 1;
         }
 
-        // Для tutu.ru — показываем, если есть ключевое слово
+        var markers = ['пассажир', 'фамилия', 'паспорт', 'номер документа', 'данные пассажира', 'сведения о пассажире'];
+        var markersFound = 0;
+        for (var m = 0; m < markers.length; m++) {
+            if (pageText.indexOf(markers[m]) !== -1) markersFound++;
+        }
+
+        // ОРИГИНАЛЬНАЯ ЛОГИКА ДЛЯ КАЖДОГО САЙТА
+        if (hostname.indexOf('avtovokzaly.ru') !== -1) {
+            var isCheckoutPath = url.indexOf('checkout') !== -1 || url.indexOf('order') !== -1 ||
+                url.indexOf('buy') !== -1 || url.indexOf('passenger') !== -1;
+            return hasVisibleInputs || (isCheckoutPath && markersFound >= 1);
+        }
+
+        if (hostname.indexOf('e-traffic.ru') !== -1) {
+            return hasVisibleInputs;
+        }
+
         if (hostname.indexOf('tutu.ru') !== -1) {
-            return hasActionKeyword;
+            return hasVisibleInputs || markersFound >= 2;
         }
 
-        // Для avperm.ru — показываем, если есть ключевое слово
         if (hostname.indexOf('avperm.ru') !== -1) {
-            return hasActionKeyword;
+            return btnLower.indexOf('купить билет') !== -1 || btnLower.indexOf('перейти к оплате') !== -1;
         }
 
-        // Для unitiki.com — показываем, если есть ключевое слово
         if (hostname.indexOf('unitiki.com') !== -1) {
-            return hasActionKeyword;
+            return btnLower.indexOf('купить билет') !== -1;
         }
 
-        // Для остальных — показываем, если есть ключевое слово
-        return hasActionKeyword;
+        var isBookingUrl = url.indexOf('buy') !== -1 || url.indexOf('booking') !== -1 ||
+            url.indexOf('order') !== -1 || url.indexOf('pay') !== -1 || url.indexOf('ticket') !== -1;
+        return hasVisibleInputs || (isBookingUrl && markersFound >= 1);
     }
 
     function findPayButton(element) {
         if (!element || element === document) return null;
 
-        // Ищем кнопку вверх по дереву
         var btn = element;
         var attempts = 0;
         while (btn && btn !== document && attempts < 10) {
@@ -191,7 +209,6 @@
         return null;
     }
 
-    // БЕЗ SHADOW DOM — используем обычный DOM
     function updateFloatingWidget(text, isVisible) {
         var widgetRoot = document.getElementById('smartway-info-root');
         if (!text || isVisible === false) {
@@ -229,7 +246,6 @@
         }
     }
 
-    // БЕЗ SHADOW DOM — модалка в обычном DOM
     function showSafetyModal(originalElement) {
         if (document.getElementById('smartway-safety-root')) return;
 
@@ -304,9 +320,8 @@
         cancelBtn.onclick = function() { root.remove(); };
 
         confirmBtn.onclick = function() {
-            console.log('[Ticket Guard] Клик по ОПЛАТИТЬ, оригинальный элемент:', originalElement);
+            console.log('[Ticket Guard] Клик по ОПЛАТИТЬ');
 
-            // Метод 1: Прямой клик через MouseEvent с composed: true
             isInternalClick = true;
 
             var realBtn = originalElement;
@@ -317,7 +332,7 @@
 
             console.log('[Ticket Guard] Реальная кнопка:', realBtn);
 
-            // Диспатчим события с composed: true для выхода из shadow DOM (если есть)
+            // Метод 1: dispatchEvent с composed: true
             var events = ['mousedown', 'mouseup', 'click'];
             for (var m = 0; m < events.length; m++) {
                 var event = new MouseEvent(events[m], {
@@ -329,7 +344,7 @@
                 realBtn.dispatchEvent(event);
             }
 
-            // Метод 2: Если не сработало — пробуем .click()
+            // Метод 2: .click() через 100ms
             setTimeout(function() {
                 if (typeof realBtn.click === 'function') {
                     realBtn.click();
@@ -353,13 +368,11 @@
     // Синхронизация между вкладками
     if (typeof GM_addValueChangeListener === 'function') {
         GM_addValueChangeListener('referenceData', function(name, old_value, new_value, remote) {
-            console.log('[Ticket Guard] referenceData изменён:', new_value ? 'есть данные' : 'нет данных');
             updateLocalState({ referenceData: new_value });
             var visible = GM_getValue('widgetVisible', true);
             updateFloatingWidget(new_value, visible);
         });
         GM_addValueChangeListener('widgetVisible', function(name, old_value, new_value, remote) {
-            console.log('[Ticket Guard] widgetVisible изменён:', new_value);
             updateLocalState({ widgetVisible: new_value });
             var data = GM_getValue('referenceData', '');
             if (data) updateFloatingWidget(data, new_value);
@@ -371,13 +384,10 @@
         if (e.altKey && e.code === 'KeyC') {
             var selection = window.getSelection().toString().trim();
             if (selection) {
-                console.log('[Ticket Guard] Alt+C: сохранено', selection.length, 'символов');
                 GM_setValue('referenceData', selection);
                 GM_setValue('widgetVisible', true);
                 updateLocalState({ referenceData: selection, widgetVisible: true });
                 updateFloatingWidget(selection, true);
-            } else {
-                console.log('[Ticket Guard] Alt+C: ничего не выделено');
             }
         }
     });
@@ -401,34 +411,24 @@
                 break;
             }
         }
-        if (!targetConfig) {
-            console.log('[Ticket Guard] Хост не в списке:', currentHost);
-            return;
-        }
-
-        console.log('[Ticket Guard] Хост найден:', currentHost, 'ищем кнопку...');
+        if (!targetConfig) return;
 
         var payButton = findPayButton(e.target);
 
         if (payButton) {
             var btnText = (payButton.innerText || '').toLowerCase().replace(/\s+/g, ' ').trim();
-            console.log('[Ticket Guard] Кнопка найдена:', btnText);
 
             if (!isFinalCheckoutStage(btnText, currentHost)) {
-                console.log('[Ticket Guard] Не финальная стадия, пропускаем');
                 return;
             }
 
-            console.log('[Ticket Guard] Показываем чек-лист');
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
             showSafetyModal(payButton);
-        } else {
-            console.log('[Ticket Guard] Кнопка не найдена');
         }
     }, true);
 
-    console.log('[Smartway Ticket Guard v2.0] Загружен');
+    console.log('[Smartway Ticket Guard v2.1] Загружен');
 
 })();
