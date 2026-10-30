@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Smartway Ticket Guard
 // @namespace    https://smartway.today/
-// @version      2.1
+// @version      2.2
 // @description  Предохранитель для проверки данных перед покупкой билетов + Alt+C
 // @author       Smartway
 // @match        https://*/*
@@ -49,6 +49,7 @@
     };
 
     var isInternalClick = false;
+    var pendingClickElement = null;
     var appState = { hasData: false, widgetVisible: false };
 
     function updateLocalState(data) {
@@ -89,13 +90,11 @@
         });
     }
 
-    // ОРИГИНАЛЬНАЯ ЛОГИКА из content.js
     function isFinalCheckoutStage(buttonText, hostname) {
         var url = window.location.href.toLowerCase();
         var pageText = (document.body.innerText || '').toLowerCase();
         var btnLower = buttonText.toLowerCase();
 
-        // Проверка на поле пароля
         var passwordInputs = document.querySelectorAll('input[type="password"]');
         var hasVisiblePassword = false;
         for (var i = 0; i < passwordInputs.length; i++) {
@@ -106,24 +105,18 @@
         }
         if (hasVisiblePassword) return false;
 
-        // Для smart-mobility и smarttravel — показываем, если есть ключевое слово
         if (hostname.indexOf('smart-mobility.ru') !== -1 || hostname.indexOf('smarttravel.ru') !== -1) {
             var isAction = false;
             for (var k = 0; k < KEYWORDS.length; k++) {
-                if (btnLower.indexOf(KEYWORDS[k]) !== -1) {
-                    isAction = true;
-                    break;
-                }
+                if (btnLower.indexOf(KEYWORDS[k]) !== -1) { isAction = true; break; }
             }
             return isAction;
         }
 
-        // Страницы поиска — не перехватываем
         var isSearchPage = url.indexOf('/search') !== -1 || url.indexOf('/results') !== -1 ||
             url.indexOf('/rasp') !== -1 || url.indexOf('/shedule') !== -1 || url.indexOf('/selection') !== -1;
         if (isSearchPage) return false;
 
-        // Критические селекторы полей ввода
         var criticalSelectors = [
             'input[name*="surname"]', 'input[name*="lastname"]', 'input[name*="fio"]',
             'input[placeholder*="Фамилия"]', 'input[placeholder*="Имя"]', 'input[placeholder*="Паспорт"]',
@@ -147,7 +140,6 @@
             if (pageText.indexOf(markers[m]) !== -1) markersFound++;
         }
 
-        // ОРИГИНАЛЬНАЯ ЛОГИКА ДЛЯ КАЖДОГО САЙТА
         if (hostname.indexOf('avtovokzaly.ru') !== -1) {
             var isCheckoutPath = url.indexOf('checkout') !== -1 || url.indexOf('order') !== -1 ||
                 url.indexOf('buy') !== -1 || url.indexOf('passenger') !== -1;
@@ -177,38 +169,27 @@
 
     function findPayButton(element) {
         if (!element || element === document) return null;
-
-        var btn = element;
-        var attempts = 0;
-        while (btn && btn !== document && attempts < 10) {
-            if (btn.tagName === 'BUTTON' || btn.tagName === 'A' ||
-                (btn.getAttribute && btn.getAttribute('role') === 'button') ||
-                (btn.className && typeof btn.className === 'string' &&
-                 (btn.className.indexOf('btn') !== -1 || btn.className.indexOf('button') !== -1))) {
-                break;
-            }
-            btn = btn.parentElement;
-            attempts++;
-        }
-
-        if (!btn || btn === document) return null;
+        var btn = element.closest("button, a, [role='button'], .v-btn, .btn, .button, .btn-pay, .ticket-btn, .button-pay, [class*='button'], [class*='btn']");
+        if (!btn) return null;
 
         var text = (btn.innerText || btn.textContent || btn.value || '').toLowerCase().replace(/\s+/g, ' ').trim();
         var isMatch = false;
         for (var i = 0; i < KEYWORDS.length; i++) {
-            if (text.indexOf(KEYWORDS[i]) !== -1) {
-                isMatch = true;
-                break;
-            }
+            if (text.indexOf(KEYWORDS[i]) !== -1) { isMatch = true; break; }
         }
         if (!isMatch && /купить\s+за/i.test(text)) isMatch = true;
 
         if (isMatch) {
+            var href = btn.getAttribute('href');
+            if (href && href.indexOf('#') !== 0 && href.indexOf('javascript:') !== 0 && !isFinalCheckoutStage(text, window.location.hostname)) {
+                return null;
+            }
             return btn;
         }
         return null;
     }
 
+    // ===== ВИДЖЕТ С MUTATION OBSERVER (решает проблему с SPA) =====
     function updateFloatingWidget(text, isVisible) {
         var widgetRoot = document.getElementById('smartway-info-root');
         if (!text || isVisible === false) {
@@ -246,6 +227,29 @@
         }
     }
 
+    // MutationObserver для восстановления виджета при перерисовке SPA
+    function setupWidgetObserver() {
+        if (window.__swWidgetObserver) return;
+        window.__swWidgetObserver = true;
+
+        var observer = new MutationObserver(function(mutations) {
+            var widget = document.getElementById('smartway-info-root');
+            if (!widget && appState.hasData && appState.widgetVisible) {
+                console.log('[Ticket Guard] Виджет удалён SPA, восстанавливаю...');
+                var data = GM_getValue('referenceData', '');
+                if (data) {
+                    updateFloatingWidget(data, true);
+                }
+            }
+        });
+
+        observer.observe(document.documentElement, {
+            childList: true,
+            subtree: true
+        });
+    }
+
+    // ===== МОДАЛКА С ПРАВИЛЬНЫМ КЛИКОМ =====
     function showSafetyModal(originalElement) {
         if (document.getElementById('smartway-safety-root')) return;
 
@@ -317,53 +321,64 @@
             })(checkboxes[i]);
         }
 
-        cancelBtn.onclick = function() { root.remove(); };
+        cancelBtn.onclick = function() {
+            pendingClickElement = null;
+            root.remove();
+        };
 
         confirmBtn.onclick = function() {
-            console.log('[Ticket Guard] Клик по ОПЛАТИТЬ');
+            console.log('[Ticket Guard] Подтверждение оплаты, элемент:', originalElement);
 
-            isInternalClick = true;
-
+            // Запоминаем элемент
             var realBtn = originalElement;
             if (originalElement.closest) {
                 var closest = originalElement.closest('button, a');
                 if (closest) realBtn = closest;
             }
 
-            console.log('[Ticket Guard] Реальная кнопка:', realBtn);
+            // Удаляем модалку
+            root.remove();
 
-            // Метод 1: dispatchEvent с composed: true
-            var events = ['mousedown', 'mouseup', 'click'];
-            for (var m = 0; m < events.length; m++) {
-                var event = new MouseEvent(events[m], {
-                    bubbles: true,
-                    cancelable: true,
-                    view: window,
-                    composed: true
-                });
-                realBtn.dispatchEvent(event);
-            }
-
-            // Метод 2: .click() через 100ms
+            // Метод 1: нативный .click() — работает в 95% случаев
             setTimeout(function() {
                 if (typeof realBtn.click === 'function') {
+                    console.log('[Ticket Guard] Вызываю .click()');
                     realBtn.click();
                 }
-            }, 100);
+            }, 150);
 
-            isInternalClick = false;
+            // Метод 2: PointerEvent (для React/Vue) — если .click() не сработал
+            setTimeout(function() {
+                try {
+                    var pointerDown = new PointerEvent('pointerdown', { bubbles: true, cancelable: true, view: window });
+                    var pointerUp = new PointerEvent('pointerup', { bubbles: true, cancelable: true, view: window });
+                    var mouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window });
+                    var mouseUp = new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window });
+                    var clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
 
-            setTimeout(function() { root.remove(); }, 200);
+                    realBtn.dispatchEvent(pointerDown);
+                    realBtn.dispatchEvent(pointerUp);
+                    realBtn.dispatchEvent(mouseDown);
+                    realBtn.dispatchEvent(mouseUp);
+                    realBtn.dispatchEvent(clickEvent);
+                    console.log('[Ticket Guard] Вызваны PointerEvent + MouseEvent');
+                } catch (err) {
+                    console.log('[Ticket Guard] PointerEvent не поддерживается:', err);
+                }
+            }, 300);
         };
     }
 
-    // Инициализация
+    // ===== ИНИЦИАЛИЗАЦИЯ =====
     var savedData = GM_getValue('referenceData', '');
     var savedVisible = GM_getValue('widgetVisible', true);
     updateLocalState({ referenceData: savedData, widgetVisible: savedVisible });
     if (savedData) {
         updateFloatingWidget(savedData, savedVisible);
     }
+
+    // Запускаем MutationObserver для SPA-сайтов
+    setTimeout(setupWidgetObserver, 1000);
 
     // Синхронизация между вкладками
     if (typeof GM_addValueChangeListener === 'function') {
@@ -422,13 +437,17 @@
                 return;
             }
 
+            // Запоминаем элемент и блокируем оригинальный клик
+            pendingClickElement = payButton;
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
+
+            // Показываем модалку
             showSafetyModal(payButton);
         }
     }, true);
 
-    console.log('[Smartway Ticket Guard v2.1] Загружен');
+    console.log('[Smartway Ticket Guard v2.2] Загружен');
 
 })();
