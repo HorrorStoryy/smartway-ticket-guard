@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Smartway Ticket Guard
 // @namespace    https://smartway.today/
-// @version      3.1
+// @version      3.2
 // @description  Чек-лист перед оплатой на сайтах партнеров Smartway
 // @match        https://*/*
 // @match        http://*/*
