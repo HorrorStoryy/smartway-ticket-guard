@@ -1,11 +1,9 @@
 // ==UserScript==
 // @name         Smartway Ticket Guard
 // @namespace    https://smartway.today/
-// @version      2.8
-// @description  Предохранитель для проверки данных перед покупкой билетов + Alt+C
+// @version      3.0
+// @description  Чек-лист перед оплатой на сайтах партнеров Smartway
 // @match        https://*/*
 // @match        http://*/*
-// @grant        GM_setValue
-// @grant        GM_getValue
-// @grant        GM_addValueChangeListener
+// @grant        none
 // ==/UserScript==
