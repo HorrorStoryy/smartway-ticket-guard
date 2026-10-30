@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Smartway Ticket Guard
 // @namespace    https://smartway.today/
-// @version      2.3
+// @version      2.4
 // @description  Предохранитель для проверки данных перед покупкой билетов + Alt+C
 // @match        https://*/*
 // @match        http://*/*
