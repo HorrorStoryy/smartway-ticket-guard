@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Smartway Ticket Guard
 // @namespace    https://smartway.today/
-// @version      2.7
+// @version      2.8
 // @description  Предохранитель для проверки данных перед покупкой билетов + Alt+C
 // @author       Smartway
 // @match        https://*/*
@@ -337,25 +337,33 @@
 
         cancelBtn.onclick = function() { root.remove(); };
 
-        // ===== МАКСИМАЛЬНО СОВМЕСТИМЫЙ КЛИК (ДЛЯ ВСЕХ САЙТОВ) =====
+        // ===== МАКСИМАЛЬНО НАДЕЖНЫЙ КЛИК (ДЛЯ TUTU, АВТОВОКЗАЛОВ И ДР.) =====
         confirmBtn.onclick = function() {
             console.log('[Ticket Guard] Подтверждение оплаты');
             isInternalClick = true;
 
-            var realBtn = originalElement.closest('button, a, input') || originalElement;
-            console.log('[Ticket Guard] Целевой элемент:', realBtn.tagName, realBtn.className || '');
-
-            // Удаляем модалку сразу, чтобы она не перекрывала события
+            // 1. Сначала удаляем модалку, чтобы она физически не перекрывала элементы сайта
             root.remove();
 
             setTimeout(function() {
                 try {
-                    // УРОВЕНЬ 1: Нативная отправка формы (работает на 90% классических сайтов, включая e-traffic)
-                    var form = realBtn.closest('form');
+                    // 2. Определяем ТОЧНЫЙ элемент, на который кликнул пользователь
+                    // (Это критически важно для React, где слушатель может висеть на внутреннем <span>, а не на <button>)
+                    let targetEl = originalElement;
+                    
+                    // Если это не интерактивный элемент, ищем ближайшего родителя-кнопку/ссылку
+                    if (targetEl.tagName !== 'BUTTON' && targetEl.tagName !== 'A' && targetEl.tagName !== 'INPUT') {
+                        targetEl = targetEl.closest('button, a, input[type="submit"], input[type="button"]') || targetEl;
+                    }
+
+                    console.log('[Ticket Guard] Целевой элемент:', targetEl.tagName, targetEl.className || '');
+
+                    // УРОВЕНЬ 1: Отправка формы (классические сайты)
+                    var form = targetEl.closest('form');
                     if (form) {
-                        console.log('[Ticket Guard] Уровень 1: Вызов form.requestSubmit()');
+                        console.log('[Ticket Guard] Уровень 1: form.requestSubmit()');
                         if (typeof form.requestSubmit === 'function') {
-                            form.requestSubmit(realBtn);
+                            form.requestSubmit(targetEl);
                         } else {
                             form.submit();
                         }
@@ -363,57 +371,44 @@
                         return;
                     }
 
-                    // УРОВЕНЬ 2: Переход по ссылке (если кнопка это <a>)
-                    var href = realBtn.getAttribute('href');
-                    if (href && href !== '#' && href.indexOf('javascript:') !== 0) {
-                        console.log('[Ticket Guard] Уровень 2: Переход по href:', href);
-                        window.location.href = href;
+                    // УРОВЕНЬ 2: Нативный фокус и клик (лучше всего работает для Vue/jQuery, например avtovokzaly.ru)
+                    console.log('[Ticket Guard] Уровень 2: focus() + native click()');
+                    targetEl.focus();
+                    targetEl.click();
+
+                    // УРОВЕНЬ 3: Полная эмуляция мыши с координатами (страховка для React, например tutu.ru)
+                    setTimeout(function() {
+                        console.log('[Ticket Guard] Уровень 3: Эмуляция PointerEvent + MouseEvent');
+                        var rect = targetEl.getBoundingClientRect();
+                        var centerX = rect.left + rect.width / 2;
+                        var centerY = rect.top + rect.height / 2;
+
+                        var commonProps = {
+                            bubbles: true, cancelable: true, view: window,
+                            clientX: centerX, clientY: centerY,
+                            screenX: centerX, screenY: centerY, button: 0
+                        };
+
+                        targetEl.dispatchEvent(new PointerEvent('pointerdown', Object.assign({}, commonProps, { pointerType: 'mouse', isPrimary: true })));
+                        targetEl.dispatchEvent(new MouseEvent('mousedown', commonProps));
+                        targetEl.dispatchEvent(new PointerEvent('pointerup', Object.assign({}, commonProps, { pointerType: 'mouse', isPrimary: true })));
+                        targetEl.dispatchEvent(new MouseEvent('mouseup', commonProps));
+                        targetEl.dispatchEvent(new MouseEvent('click', commonProps));
+
+                        // УРОВЕНЬ 4: jQuery триггер (для очень старых сайтов)
+                        if (typeof window.jQuery !== 'undefined' && window.jQuery(targetEl).length) {
+                            window.jQuery(targetEl).trigger('click');
+                        }
+                        
+                        console.log('[Ticket Guard] Эмуляция завершена');
                         isInternalClick = false;
-                        return;
-                    }
-
-                    // УРОВЕНЬ 3: Полная эмуляция мыши для React/Vue/jQuery (tutu.ru, aviasales и др.)
-                    console.log('[Ticket Guard] Уровень 3: Полная эмуляция клика мыши');
-                    
-                    // 1. Фокус на элемент (важно для некоторых фреймворков)
-                    realBtn.focus();
-
-                    // 2. Получаем координаты центра кнопки (React проверяет, что клик был внутри элемента)
-                    var rect = realBtn.getBoundingClientRect();
-                    var centerX = rect.left + rect.width / 2;
-                    var centerY = rect.top + rect.height / 2;
-
-                    var commonProps = {
-                        bubbles: true,
-                        cancelable: true,
-                        view: window,
-                        clientX: centerX,
-                        clientY: centerY,
-                        screenX: centerX,
-                        screenY: centerY,
-                        button: 0
-                    };
-
-                    // 3. Отправляем строгую последовательность событий, которую ждет браузер
-                    realBtn.dispatchEvent(new PointerEvent('pointerdown', Object.assign({}, commonProps, { pointerType: 'mouse', isPrimary: true })));
-                    realBtn.dispatchEvent(new MouseEvent('mousedown', commonProps));
-                    realBtn.dispatchEvent(new PointerEvent('pointerup', Object.assign({}, commonProps, { pointerType: 'mouse', isPrimary: true })));
-                    realBtn.dispatchEvent(new MouseEvent('mouseup', commonProps));
-                    realBtn.dispatchEvent(new MouseEvent('click', commonProps));
-
-                    // 4. Дополнительный триггер для старых сайтов на jQuery
-                    if (typeof window.jQuery !== 'undefined' && window.jQuery(realBtn).length) {
-                        window.jQuery(realBtn).trigger('click');
-                    }
-
-                    console.log('[Ticket Guard] Эмуляция клика завершена успешно');
+                    }, 50);
 
                 } catch (err) {
-                    console.error('[Ticket Guard] Ошибка при эмуляции клика:', err);
-                } finally {
+                    console.error('[Ticket Guard] Ошибка при клике:', err);
                     isInternalClick = false;
                 }
-            }, 150); // Небольшая задержка позволяет браузеру корректно обработать удаление модалки
+            }, 100); // 100мс достаточно для удаления модалки из DOM, но клик происходит мгновенно для пользователя
         };
     }
 
@@ -489,6 +484,6 @@
         }
     }, true);
 
-    console.log('[Smartway Ticket Guard v2.7] Загружен');
+    console.log('[Smartway Ticket Guard v2.8] Загружен');
 
 })();
