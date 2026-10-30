@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Smartway Ticket Guard
 // @namespace    https://smartway.today/
-// @version      2.4
+// @version      2.5
 // @description  Предохранитель для проверки данных перед покупкой билетов + Alt+C
 // @author       Smartway
 // @match        https://*/*
@@ -95,7 +95,6 @@
         var pageText = (document.body.innerText || '').toLowerCase();
         var btnLower = buttonText.toLowerCase();
 
-        // Проверка на поле пароля
         var passwordInputs = document.querySelectorAll('input[type="password"]');
         var hasVisiblePassword = false;
         for (var i = 0; i < passwordInputs.length; i++) {
@@ -106,24 +105,18 @@
         }
         if (hasVisiblePassword) return false;
 
-        // Для smart-mobility и smarttravel
         if (hostname.indexOf('smart-mobility.ru') !== -1 || hostname.indexOf('smarttravel.ru') !== -1) {
             var isAction = false;
             for (var k = 0; k < KEYWORDS.length; k++) {
-                if (btnLower.indexOf(KEYWORDS[k]) !== -1) {
-                    isAction = true;
-                    break;
-                }
+                if (btnLower.indexOf(KEYWORDS[k]) !== -1) { isAction = true; break; }
             }
             if (isAction) return true;
         }
 
-        // Страницы поиска — не перехватываем
         var isSearchPage = url.indexOf('/search') !== -1 || url.indexOf('/results') !== -1 ||
             url.indexOf('/rasp') !== -1 || url.indexOf('/shedule') !== -1 || url.indexOf('/selection') !== -1;
         if (isSearchPage) return false;
 
-        // Критические селекторы полей ввода
         var criticalSelectors = [
             'input[name*="surname"]', 'input[name*="lastname"]', 'input[name*="fio"]',
             'input[placeholder*="Фамилия"]', 'input[placeholder*="Имя"]', 'input[placeholder*="Паспорт"]',
@@ -147,7 +140,6 @@
             if (pageText.indexOf(markers[m]) !== -1) markersFound++;
         }
 
-        // ОРИГИНАЛЬНАЯ ЛОГИКА ДЛЯ КАЖДОГО САЙТА
         if (hostname.indexOf('avtovokzaly.ru') !== -1) {
             var isCheckoutPath = url.indexOf('checkout') !== -1 || url.indexOf('order') !== -1 ||
                 url.indexOf('buy') !== -1 || url.indexOf('passenger') !== -1;
@@ -183,10 +175,7 @@
         var text = (btn.innerText || btn.textContent || btn.value || '').toLowerCase().replace(/\s+/g, ' ').trim();
         var isMatch = false;
         for (var i = 0; i < KEYWORDS.length; i++) {
-            if (text.indexOf(KEYWORDS[i]) !== -1) {
-                isMatch = true;
-                break;
-            }
+            if (text.indexOf(KEYWORDS[i]) !== -1) { isMatch = true; break; }
         }
         if (!isMatch && /купить\s+за/i.test(text)) isMatch = true;
 
@@ -200,6 +189,7 @@
         return null;
     }
 
+    // ===== ВИДЖЕТ С SHADOW DOM (как в оригинале) =====
     function updateFloatingWidget(text, isVisible) {
         var widgetRoot = document.getElementById('smartway-info-root');
         if (!text || isVisible === false) {
@@ -212,31 +202,50 @@
         if (!widgetRoot) {
             widgetRoot = document.createElement('div');
             widgetRoot.id = 'smartway-info-root';
-            widgetRoot.style.cssText = 'position:fixed;bottom:20px;right:20px;width:360px;background:#0f172a;color:#f8fafc;padding:16px;border-radius:14px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.5);z-index:2147483647;font-family:system-ui,-apple-system,sans-serif;border:1px solid #334155;';
-            widgetRoot.innerHTML =
-                '<div style="font-weight:800;margin-bottom:10px;color:#38bdf8;display:flex;justify-content:space-between;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">' +
-                '<span>Справка клиента</span>' +
-                '<span id="close-widget" style="cursor:pointer;opacity:0.6;font-size:18px;line-height:1;padding:0 5px;">' + ICON_CLOSE + '</span>' +
-                '</div>' +
-                '<div id="widget-text" style="font-family:monospace;background:#000000;padding:12px;border-radius:8px;max-height:200px;overflow-y:auto;white-space:pre-wrap;font-size:14px;color:#ffffff;border:1px solid #1e293b;line-height:1.6;"></div>';
-
             document.body.appendChild(widgetRoot);
+            var shadow = widgetRoot.attachShadow({ mode: 'open' });
 
-            widgetRoot.querySelector('#close-widget').onclick = function() {
+            var style = document.createElement('style');
+            style.textContent =
+                '.info-card {' +
+                '  position: fixed; bottom: 20px; right: 20px; width: 360px;' +
+                '  background: #0f172a; color: #f8fafc; padding: 16px; border-radius: 14px;' +
+                '  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); z-index: 2147483647;' +
+                '  font-family: system-ui, -apple-system, sans-serif; border: 1px solid #334155;' +
+                '}' +
+                '.header { font-weight: 800; margin-bottom: 10px; color: #38bdf8; display: flex; justify-content: space-between; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }' +
+                '.content {' +
+                '  font-family: "JetBrains Mono", "Fira Code", monospace;' +
+                '  background: #000000; padding: 12px; border-radius: 8px;' +
+                '  max-height: 200px; overflow-y: auto; white-space: pre-wrap;' +
+                '  font-size: 14px; color: #ffffff; border: 1px solid #1e293b; line-height: 1.6;' +
+                '}' +
+                '.date-tag { color: #facc15; font-weight: bold; text-decoration: underline; }' +
+                '.close { cursor: pointer; opacity: 0.6; font-size: 18px; line-height: 1; padding: 0 5px; }' +
+                '.close:hover { opacity: 1; color: #ef4444; }';
+
+            var container = document.createElement('div');
+            container.className = 'info-card';
+            container.innerHTML = '<div class="header"><span>Справка клиента</span><span class="close" id="close-widget">' + ICON_CLOSE + '</span></div><div class="content" id="widget-text"></div>';
+
+            shadow.appendChild(style);
+            shadow.appendChild(container);
+
+            shadow.getElementById('close-widget').onclick = function() {
                 GM_setValue('widgetVisible', false);
                 updateLocalState({ widgetVisible: false });
-                updateFloatingWidget(GM_getValue('referenceData', ''), false);
             };
         }
 
-        var textElement = widgetRoot.querySelector('#widget-text');
+        var textElement = widgetRoot.shadowRoot.getElementById('widget-text');
         if (textElement) {
             var html = escapeHtml(enrichedText);
-            html = html.replace(/\((\d{2}\.\d{2}\.\d{4})\)/g, '<span style="color:#facc15;font-weight:bold;text-decoration:underline;">($1)</span>');
+            html = html.replace(/\((\d{2}\.\d{2}\.\d{4})\)/g, '<span class="date-tag">($1)</span>');
             textElement.innerHTML = html;
         }
     }
 
+    // ===== МОДАЛКА С SHADOW DOM И ОРИГИНАЛЬНЫМ КЛИКОМ =====
     function showSafetyModal(originalElement) {
         if (document.getElementById('smartway-safety-root')) return;
 
@@ -245,94 +254,153 @@
 
         var root = document.createElement('div');
         root.id = 'smartway-safety-root';
-        root.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:transparent;display:flex;align-items:stretch;justify-content:flex-end;z-index:2147483647;font-family:system-ui,sans-serif;pointer-events:none;';
-
-        var modal = document.createElement('div');
-        modal.style.cssText = 'background:#ffffff;width:450px;padding:30px;height:100vh;box-shadow:-10px 0 30px rgba(0,0,0,0.15);color:#1e293b;border-left:1px solid #e2e8f0;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;animation:slideLeft 0.3s cubic-bezier(0.16,1,0.3,1);pointer-events:auto;overflow-y:auto;';
-
-        var htmlContent = escapeHtml(referenceText);
-        htmlContent = htmlContent.replace(/\((\d{2}\.\d{2}\.\d{4})\)/g, '<span style="background:#fef9c3;color:#854d0e;padding:2px 6px;border-radius:4px;font-weight:bold;">($1)</span>');
-
-        modal.innerHTML =
-            '<div style="overflow-y:auto;flex-grow:1;padding-right:5px;margin-bottom:20px;">' +
-            '<h2 style="margin:0 0 20px;font-size:18px;text-transform:uppercase;color:#ef4444;font-weight:900;text-align:center;">Сверка перед оплатой</h2>' +
-            '<div style="background:#f8fafc;border:2px solid #cbd5e1;border-radius:12px;padding:16px;font-family:monospace;font-size:14px;white-space:pre-wrap;margin-bottom:20px;max-height:200px;overflow-y:auto;color:#000000;line-height:1.5;">' + htmlContent + '</div>' +
-            '<div style="margin-bottom:20px;display:flex;flex-direction:column;gap:8px;">' +
-            '<label style="display:flex;align-items:center;cursor:pointer;font-size:14px;padding:10px 14px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;transition:background 0.15s;"><input type="checkbox" class="safeguard" style="width:20px;height:20px;margin-right:14px;cursor:pointer;accent-color:#10b981;"><span>Дата поездки</span></label>' +
-            '<label style="display:flex;align-items:center;cursor:pointer;font-size:14px;padding:10px 14px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;transition:background 0.15s;"><input type="checkbox" class="safeguard" style="width:20px;height:20px;margin-right:14px;cursor:pointer;accent-color:#10b981;"><span>Время поездки</span></label>' +
-            '<label style="display:flex;align-items:center;cursor:pointer;font-size:14px;padding:10px 14px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;transition:background 0.15s;"><input type="checkbox" class="safeguard" style="width:20px;height:20px;margin-right:14px;cursor:pointer;accent-color:#10b981;"><span>Город отправления и адрес</span></label>' +
-            '<label style="display:flex;align-items:center;cursor:pointer;font-size:14px;padding:10px 14px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;transition:background 0.15s;"><input type="checkbox" class="safeguard" style="width:20px;height:20px;margin-right:14px;cursor:pointer;accent-color:#10b981;"><span>Город прибытия и адрес</span></label>' +
-            '<label style="display:flex;align-items:center;cursor:pointer;font-size:14px;padding:10px 14px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;transition:background 0.15s;"><input type="checkbox" class="safeguard" style="width:20px;height:20px;margin-right:14px;cursor:pointer;accent-color:#10b981;"><span>ФИО и паспорт пассажира</span></label>' +
-            '<label style="display:flex;align-items:center;cursor:pointer;font-size:14px;padding:10px 14px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;transition:background 0.15s;"><input type="checkbox" class="safeguard" style="width:20px;height:20px;margin-right:14px;cursor:pointer;accent-color:#10b981;"><span>Наличие багажа</span></label>' +
-            '</div>' +
-            '</div>' +
-            '<div style="display:flex;gap:12px;margin-top:auto;">' +
-            '<button id="cancel" style="flex:1;padding:14px;border-radius:12px;border:2px solid #e2e8f0;background:#fff;color:#64748b;font-weight:800;cursor:pointer;font-size:14px;text-transform:uppercase;transition:all 0.2s;">Исправить</button>' +
-            '<button id="confirm" disabled style="flex:1;padding:14px;border-radius:12px;border:none;background:#e2e8f0;color:#94a3b8;font-weight:800;cursor:not-allowed;font-size:14px;text-transform:uppercase;transition:all 0.2s;">ОПЛАТИТЬ</button>' +
-            '</div>';
-
-        root.appendChild(modal);
         document.body.appendChild(root);
 
-        var checkboxes = root.querySelectorAll('.safeguard');
-        var confirmBtn = root.querySelector('#confirm');
-        var cancelBtn = root.querySelector('#cancel');
+        var shadow = root.attachShadow({ mode: 'open' });
+
+        var style = document.createElement('style');
+        style.textContent =
+            '.overlay {' +
+            '  position: fixed; top: 0; left: 0; width: 100%; height: 100%;' +
+            '  background: transparent;' +
+            '  display: flex; align-items: stretch; justify-content: flex-end;' +
+            '  z-index: 2147483647; font-family: system-ui, sans-serif;' +
+            '  pointer-events: none;' +
+            '}' +
+            '.modal {' +
+            '  background: #ffffff; width: 450px; padding: 30px; height: 100vh;' +
+            '  box-shadow: -10px 0 30px rgba(0,0,0,0.15); color: #1e293b;' +
+            '  border-left: 1px solid #e2e8f0; box-sizing: border-box;' +
+            '  display: flex; flex-direction: column; justify-content: space-between;' +
+            '  animation: slideLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1);' +
+            '  pointer-events: auto;' +
+            '}' +
+            '@keyframes slideLeft { from { transform: translateX(100%); } to { transform: translateX(0); } }' +
+            '.modal-scrollable { overflow-y: auto; flex-grow: 1; padding-right: 5px; margin-bottom: 20px; }' +
+            'h2 { margin: 0 0 20px; font-size: 18px; text-transform: uppercase; color: #ef4444; font-weight: 900; text-align: center; }' +
+            '.reference-box {' +
+            '  background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px;' +
+            '  padding: 16px; font-family: monospace; font-size: 14px; white-space: pre-wrap;' +
+            '  margin-bottom: 20px; max-height: 200px; overflow-y: auto; color: #000000; line-height: 1.5;' +
+            '}' +
+            '.date-highlight { background: #fef9c3; color: #854d0e; padding: 2px 6px; border-radius: 4px; font-weight: bold; }' +
+            '.checklist { margin-bottom: 20px; display: flex; flex-direction: column; gap: 8px; }' +
+            '.check-item {' +
+            '  display: flex; align-items: center; cursor: pointer;' +
+            '  font-size: 14px; padding: 10px 14px; border-radius: 10px; background: #f8fafc; border: 1px solid #e2e8f0;' +
+            '  transition: background 0.15s;' +
+            '}' +
+            '.check-item:hover { background: #f1f5f9; }' +
+            '.check-item.checked { border-color: #10b981; background: #f0fdf4; }' +
+            '.check-item input { width: 20px; height: 20px; margin-right: 14px; cursor: pointer; accent-color: #10b981; }' +
+            '.actions { display: flex; gap: 12px; margin-top: auto; }' +
+            '.btn { flex: 1; padding: 14px; border-radius: 12px; border: none; font-weight: 800; cursor: pointer; font-size: 14px; text-transform: uppercase; transition: all 0.2s; }' +
+            '.btn-pay { background: #10b981; color: #fff; }' +
+            '.btn-pay:disabled { background: #e2e8f0; color: #94a3b8; cursor: not-allowed; }' +
+            '.btn-cancel { background: #fff; border: 2px solid #e2e8f0; color: #64748b; }' +
+            '.btn-cancel:hover { background: #f1f5f9; }';
+
+        var container = document.createElement('div');
+        container.className = 'overlay';
+
+        var htmlContent = escapeHtml(referenceText);
+        htmlContent = htmlContent.replace(/\((\d{2}\.\d{2}\.\d{4})\)/g, '<span class="date-highlight">($1)</span>');
+
+        container.innerHTML =
+            '<div class="modal">' +
+            '  <div class="modal-scrollable">' +
+            '    <h2>Сверка перед оплатой</h2>' +
+            '    <div class="reference-box">' + htmlContent + '</div>' +
+            '    <div class="checklist">' +
+            '      <label class="check-item"><input type="checkbox" class="safeguard"><span>Дата поездки</span></label>' +
+            '      <label class="check-item"><input type="checkbox" class="safeguard"><span>Время поездки</span></label>' +
+            '      <label class="check-item"><input type="checkbox" class="safeguard"><span>Город отправления и адрес</span></label>' +
+            '      <label class="check-item"><input type="checkbox" class="safeguard"><span>Город прибытия и адрес</span></label>' +
+            '      <label class="check-item"><input type="checkbox" class="safeguard"><span>ФИО и паспорт пассажира</span></label>' +
+            '      <label class="check-item"><input type="checkbox" class="safeguard"><span>Наличие багажа</span></label>' +
+            '    </div>' +
+            '  </div>' +
+            '  <div class="actions">' +
+            '    <button class="btn btn-cancel" id="cancel">Исправить</button>' +
+            '    <button class="btn btn-pay" id="confirm" disabled>ОПЛАТИТЬ</button>' +
+            '  </div>' +
+            '</div>';
+
+        shadow.appendChild(style);
+        shadow.appendChild(container);
+
+        var checkboxes = shadow.querySelectorAll('.safeguard');
+        var confirmBtn = shadow.getElementById('confirm');
+        var cancelBtn = shadow.getElementById('cancel');
 
         for (var i = 0; i < checkboxes.length; i++) {
             (function(cb) {
                 cb.onchange = function() {
-                    var label = cb.parentElement;
-                    if (cb.checked) {
-                        label.style.borderColor = '#10b981';
-                        label.style.background = '#f0fdf4';
-                    } else {
-                        label.style.borderColor = '#e2e8f0';
-                        label.style.background = '#f8fafc';
-                    }
+                    cb.closest('.check-item').classList.toggle('checked', cb.checked);
                     var allChecked = true;
                     for (var j = 0; j < checkboxes.length; j++) {
                         if (!checkboxes[j].checked) { allChecked = false; break; }
                     }
-                    if (allChecked) {
-                        confirmBtn.disabled = false;
-                        confirmBtn.style.background = '#10b981';
-                        confirmBtn.style.color = '#fff';
-                        confirmBtn.style.cursor = 'pointer';
-                    } else {
-                        confirmBtn.disabled = true;
-                        confirmBtn.style.background = '#e2e8f0';
-                        confirmBtn.style.color = '#94a3b8';
-                        confirmBtn.style.cursor = 'not-allowed';
-                    }
+                    confirmBtn.disabled = !allChecked;
                 };
             })(checkboxes[i]);
         }
 
         cancelBtn.onclick = function() { root.remove(); };
 
+        // ОРИГИНАЛЬНАЯ ЛОГИКА КЛИКА из content.js
         confirmBtn.onclick = function() {
-            console.log('[Ticket Guard] Клик по ОПЛАТИТЬ, элемент:', originalElement);
+            console.log('[Ticket Guard] Подтверждение оплаты');
 
-            var realBtn = originalElement;
-            if (originalElement.closest) {
-                var closest = originalElement.closest('button, a');
-                if (closest) realBtn = closest;
-            }
+            isInternalClick = true;
 
-            // Удаляем модалку
-            root.remove();
-
-            // Вызываем нативный клик с задержкой
-            setTimeout(function() {
-                console.log('[Ticket Guard] Вызываю .click() на:', realBtn);
-                if (typeof realBtn.click === 'function') {
-                    realBtn.click();
+            // Функция эмуляции клика (как в оригинале)
+            var triggerClick = function(el) {
+                var events = ['mousedown', 'mouseup', 'click'];
+                for (var m = 0; m < events.length; m++) {
+                    el.dispatchEvent(new MouseEvent(events[m], {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window
+                    }));
                 }
-            }, 200);
+            };
+
+            // Находим реальную кнопку
+            var realBtn = originalElement.closest('button, a') || originalElement;
+
+            console.log('[Ticket Guard] Реальная кнопка:', realBtn.tagName, realBtn.className);
+
+            // Проверяем, есть ли форма вокруг кнопки
+            var form = realBtn.closest('form');
+
+            if (form) {
+                console.log('[Ticket Guard] Найдена форма, вызываю form.submit()');
+                root.remove();
+                setTimeout(function() {
+                    form.submit();
+                }, 100);
+            } else {
+                // Проверяем, есть ли href у кнопки (ссылка)
+                var href = realBtn.getAttribute('href');
+                if (href && href.indexOf('#') !== 0 && href.indexOf('javascript:') !== 0) {
+                    console.log('[Ticket Guard] Найдена ссылка, перехожу по href:', href);
+                    root.remove();
+                    setTimeout(function() {
+                        window.location.href = href;
+                    }, 100);
+                } else {
+                    // Обычный клик через dispatchEvent (как в оригинале)
+                    console.log('[Ticket Guard] Вызываю triggerClick');
+                    triggerClick(realBtn);
+                    isInternalClick = false;
+                    root.remove();
+                }
+            }
         };
     }
 
-    // Инициализация
+    // ===== ИНИЦИАЛИЗАЦИЯ =====
     var savedData = GM_getValue('referenceData', '');
     var savedVisible = GM_getValue('widgetVisible', true);
     updateLocalState({ referenceData: savedData, widgetVisible: savedVisible });
@@ -404,6 +472,6 @@
         }
     }, true);
 
-    console.log('[Smartway Ticket Guard v2.4] Загружен');
+    console.log('[Smartway Ticket Guard v2.5] Загружен');
 
 })();
