@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Smartway Ticket Guard
 // @namespace    https://smartway.today/
-// @version      3.1
+// @version      3.2
 // @description  Чек-лист перед оплатой на сайтах партнеров Smartway
 // @author       Smartway
 // @match        https://*/*
@@ -37,7 +37,6 @@
 
     let isInternalClick = false;
 
-    // ОРИГИНАЛЬНАЯ ЛОГИКА из content.js
     function isFinalCheckoutStage(buttonText, hostname) {
         const url = window.location.href.toLowerCase();
         const pageText = (document.body.innerText || '').toLowerCase();
@@ -103,8 +102,8 @@
         return null;
     }
 
-    // ОРИГИНАЛЬНАЯ ЛОГИКА МОДАЛКИ из content.js
     function showSafetyModal(originalElement) {
+        // ВАЖНО: проверяем, что модалка еще не показана
         if (document.getElementById('smartway-safety-root')) return;
 
         const root = document.createElement('div');
@@ -189,7 +188,6 @@
 
         cancelBtn.onclick = () => root.remove();
 
-        // ОРИГИНАЛЬНАЯ ЛОГИКА КЛИКА из content.js
         confirmBtn.onclick = () => {
             isInternalClick = true;
             const triggerClick = (el) => {
@@ -204,9 +202,11 @@
         };
     }
 
-    // ОРИГИНАЛЬНЫЙ ПЕРЕХВАТЧИК КЛИКОВ из content.js
     document.addEventListener('click', (e) => {
         if (isInternalClick) return;
+        
+        // ВАЖНО: если модалка уже показана, игнорируем все клики
+        if (document.getElementById('smartway-safety-root')) return;
 
         const tag = e.target.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
@@ -233,6 +233,6 @@
         }
     }, true);
 
-    console.log('[Smartway Ticket Guard v3.1] Загружен с оригинальной логикой');
+    console.log('[Smartway Ticket Guard v3.2] Загружен');
 
 })();
