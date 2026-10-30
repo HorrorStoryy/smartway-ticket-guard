@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Smartway Ticket Guard
 // @namespace    https://smartway.today/
-// @version      2.5
+// @version      2.6
 // @description  Предохранитель для проверки данных перед покупкой билетов + Alt+C
 // @author       Smartway
 // @match        https://*/*
@@ -89,7 +89,6 @@
         });
     }
 
-    // ОРИГИНАЛЬНАЯ ЛОГИКА из content.js
     function isFinalCheckoutStage(buttonText, hostname) {
         var url = window.location.href.toLowerCase();
         var pageText = (document.body.innerText || '').toLowerCase();
@@ -99,8 +98,7 @@
         var hasVisiblePassword = false;
         for (var i = 0; i < passwordInputs.length; i++) {
             if (passwordInputs[i].offsetParent !== null || passwordInputs[i].offsetWidth > 0) {
-                hasVisiblePassword = true;
-                break;
+                hasVisiblePassword = true; break;
             }
         }
         if (hasVisiblePassword) return false;
@@ -129,8 +127,7 @@
         var hasVisibleInputs = false;
         for (var j = 0; j < allCritical.length; j++) {
             if (allCritical[j].offsetParent !== null || allCritical[j].offsetWidth > 0) {
-                hasVisibleInputs = true;
-                break;
+                hasVisibleInputs = true; break;
             }
         }
 
@@ -140,24 +137,24 @@
             if (pageText.indexOf(markers[m]) !== -1) markersFound++;
         }
 
+        // ОРИГИНАЛЬНАЯ ЛОГИКА + небольшая подстраховка на случай изменения вёрстки сайта
         if (hostname.indexOf('avtovokzaly.ru') !== -1) {
             var isCheckoutPath = url.indexOf('checkout') !== -1 || url.indexOf('order') !== -1 ||
-                url.indexOf('buy') !== -1 || url.indexOf('passenger') !== -1;
-            return hasVisibleInputs || (isCheckoutPath && markersFound >= 1);
+                url.indexOf('buy') !== -1 || url.indexOf('passenger') !== -1 || url.indexOf('ticket') !== -1;
+            
+            // Если вёрстка изменилась и hasVisibleInputs не срабатывает, но мы на странице оформления и кнопка говорит "купить" - показываем
+            var isExplicitBuy = btnLower.indexOf('купить') !== -1 || btnLower.indexOf('оплатить') !== -1;
+            
+            var result = hasVisibleInputs || (isCheckoutPath && markersFound >= 1) || (isCheckoutPath && isExplicitBuy);
+            console.log('[Ticket Guard] avtovokzaly.ru проверка:', { hasVisibleInputs: hasVisibleInputs, isCheckoutPath: isCheckoutPath, markersFound: markersFound, isExplicitBuy: isExplicitBuy, итог: result });
+            return result;
         }
 
-        if (hostname.indexOf('e-traffic.ru') !== -1) {
-            return hasVisibleInputs;
-        }
-
-        if (hostname.indexOf('tutu.ru') !== -1) {
-            return hasVisibleInputs || markersFound >= 2;
-        }
-
+        if (hostname.indexOf('e-traffic.ru') !== -1) return hasVisibleInputs;
+        if (hostname.indexOf('tutu.ru') !== -1) return hasVisibleInputs || markersFound >= 2;
         if (hostname.indexOf('avperm.ru') !== -1) {
             return btnLower.indexOf('купить билет') !== -1 || btnLower.indexOf('перейти к оплате') !== -1;
         }
-
         if (hostname.indexOf('unitiki.com') !== -1) {
             return btnLower.indexOf('купить билет') !== -1;
         }
@@ -189,7 +186,6 @@
         return null;
     }
 
-    // ===== ВИДЖЕТ С SHADOW DOM (как в оригинале) =====
     function updateFloatingWidget(text, isVisible) {
         var widgetRoot = document.getElementById('smartway-info-root');
         if (!text || isVisible === false) {
@@ -245,7 +241,6 @@
         }
     }
 
-    // ===== МОДАЛКА С SHADOW DOM И ОРИГИНАЛЬНЫМ КЛИКОМ =====
     function showSafetyModal(originalElement) {
         if (document.getElementById('smartway-safety-root')) return;
 
@@ -348,61 +343,58 @@
 
         cancelBtn.onclick = function() { root.remove(); };
 
-        // ОРИГИНАЛЬНАЯ ЛОГИКА КЛИКА из content.js
+        // ===== УМНАЯ ОБРАБОТКА КЛИКА (РЕШЕНИЕ ПРОБЛЕМ С РОС-БИЛЕТОМ И ТУТУ) =====
         confirmBtn.onclick = function() {
             console.log('[Ticket Guard] Подтверждение оплаты');
-
             isInternalClick = true;
 
-            // Функция эмуляции клика (как в оригинале)
-            var triggerClick = function(el) {
-                var events = ['mousedown', 'mouseup', 'click'];
-                for (var m = 0; m < events.length; m++) {
-                    el.dispatchEvent(new MouseEvent(events[m], {
-                        bubbles: true,
-                        cancelable: true,
-                        view: window
-                    }));
-                }
-            };
+            var realBtn = originalElement.closest('button, a, input') || originalElement;
+            console.log('[Ticket Guard] Целевой элемент:', realBtn.tagName, realBtn.className || '');
 
-            // Находим реальную кнопку
-            var realBtn = originalElement.closest('button, a') || originalElement;
-
-            console.log('[Ticket Guard] Реальная кнопка:', realBtn.tagName, realBtn.className);
-
-            // Проверяем, есть ли форма вокруг кнопки
+            // 1. Если кнопка внутри формы (как на ros-bilet.ru) - отправляем форму
             var form = realBtn.closest('form');
-
             if (form) {
-                console.log('[Ticket Guard] Найдена форма, вызываю form.submit()');
+                console.log('[Ticket Guard] Найдена форма, используем form.requestSubmit()');
                 root.remove();
                 setTimeout(function() {
-                    form.submit();
+                    if (typeof form.requestSubmit === 'function') {
+                        form.requestSubmit(realBtn); // Передаём кнопку как источник события
+                    } else {
+                        form.submit();
+                    }
                 }, 100);
-            } else {
-                // Проверяем, есть ли href у кнопки (ссылка)
-                var href = realBtn.getAttribute('href');
-                if (href && href.indexOf('#') !== 0 && href.indexOf('javascript:') !== 0) {
-                    console.log('[Ticket Guard] Найдена ссылка, перехожу по href:', href);
-                    root.remove();
-                    setTimeout(function() {
-                        window.location.href = href;
-                    }, 100);
-                } else {
-                    // Обычный клик через dispatchEvent (как в оригинале)
-                    console.log('[Ticket Guard] Вызываю triggerClick');
-                    triggerClick(realBtn);
-                    isInternalClick = false;
-                    root.remove();
-                }
+                return;
             }
+
+            // 2. Если это ссылка (как иногда бывает на некоторых сайтах)
+            var href = realBtn.getAttribute('href');
+            if (href && href.indexOf('#') !== 0 && href.indexOf('javascript:') !== 0) {
+                console.log('[Ticket Guard] Найдена ссылка, переходим по href:', href);
+                root.remove();
+                setTimeout(function() {
+                    window.location.href = href;
+                }, 100);
+                return;
+            }
+
+            // 3. Иначе эмулируем клик (для React/Vue сайтов типа tutu.ru)
+            console.log('[Ticket Guard] Эмуляция клика через PointerEvent + MouseEvent');
+            var triggerClick = function(el) {
+                el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, view: window }));
+                el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, view: window }));
+                el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+            };
+            
+            triggerClick(realBtn);
+            isInternalClick = false;
+            root.remove();
         };
     }
 
     // ===== ИНИЦИАЛИЗАЦИЯ =====
     var savedData = GM_getValue('referenceData', '');
     var savedVisible = GM_getValue('widgetVisible', true);
+    console.log('[Ticket Guard] Загружено из хранилища:', { data: savedData ? 'есть (' + savedData.length + ' симв.)' : 'нет', visible: savedVisible });
     updateLocalState({ referenceData: savedData, widgetVisible: savedVisible });
     if (savedData) {
         updateFloatingWidget(savedData, savedVisible);
@@ -411,6 +403,7 @@
     // Синхронизация между вкладками
     if (typeof GM_addValueChangeListener === 'function') {
         GM_addValueChangeListener('referenceData', function(name, old_value, new_value, remote) {
+            console.log('[Ticket Guard] referenceData обновлён из другой вкладки');
             updateLocalState({ referenceData: new_value });
             var visible = GM_getValue('widgetVisible', true);
             updateFloatingWidget(new_value, visible);
@@ -427,6 +420,7 @@
         if (e.altKey && e.code === 'KeyC') {
             var selection = window.getSelection().toString().trim();
             if (selection) {
+                console.log('[Ticket Guard] Alt+C: сохранено', selection.length, 'символов');
                 GM_setValue('referenceData', selection);
                 GM_setValue('widgetVisible', true);
                 updateLocalState({ referenceData: selection, widgetVisible: true });
@@ -438,6 +432,8 @@
     // Перехват кликов
     document.addEventListener('click', function(e) {
         if (isInternalClick) return;
+        
+        console.log('[Ticket Guard] appState:', appState);
         if (!appState.hasData || !appState.widgetVisible) return;
 
         var tag = e.target.tagName;
@@ -457,14 +453,20 @@
         if (!targetConfig) return;
 
         var payButton = findPayButton(e.target);
+        if (!payButton) {
+            payButton = e.target.closest(targetConfig.selector);
+        }
 
         if (payButton) {
             var btnText = (payButton.innerText || '').toLowerCase().replace(/\s+/g, ' ').trim();
+            console.log('[Ticket Guard] Найдена кнопка на', currentHost, ':', btnText);
 
             if (!isFinalCheckoutStage(btnText, currentHost)) {
+                console.log('[Ticket Guard] isFinalCheckoutStage вернул false');
                 return;
             }
 
+            console.log('[Ticket Guard] Показываем чек-лист');
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
@@ -472,6 +474,6 @@
         }
     }, true);
 
-    console.log('[Smartway Ticket Guard v2.5] Загружен');
+    console.log('[Smartway Ticket Guard v2.6] Загружен');
 
 })();
